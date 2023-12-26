@@ -44,10 +44,10 @@ cv::Mat capture_screenshot(HWND hwnd)
 	RECT rect;
 	GetWindowRect(hwnd, &rect);
 	
-	int x = rect.left;
-	int y = rect.top;
-	int width = rect.right - x;
-	int height = rect.bottom - y;
+	int x_offset = rect.left;
+	int y_offset = rect.top;
+	int width = rect.right - x_offset;
+	int height = rect.bottom - y_offset;
 	
 	HDC hScreenDC = GetDC(NULL);
     HDC hMemoryDC = CreateCompatibleDC(hScreenDC);
@@ -55,7 +55,7 @@ cv::Mat capture_screenshot(HWND hwnd)
     HBITMAP hBitmap = CreateCompatibleBitmap(hScreenDC, width, height);
     HGDIOBJ oldBitmap = SelectObject(hMemoryDC, hBitmap);
 
-    BitBlt(hMemoryDC, 0, 0, width, height, hScreenDC, x, y, SRCCOPY);
+    BitBlt(hMemoryDC, 0, 0, width, height, hScreenDC, x_offset, y_offset, SRCCOPY);
     
     // Convert the captured image to an OpenCV Mat
     BITMAPINFOHEADER bi;
@@ -114,32 +114,78 @@ int check_mat(const cv::Mat& image)
 	return 0;
 }
 
-int find(const cv::Mat& haystack, const cv::Mat& needle, POINT& centre, const cv::Mat& mask = cv::Mat())
+int find(HWND hwnd, std::string goal_string, POINT& centre, DWORD timeout, DWORD interval, double confidence = 0.95, const cv::Mat& mask = cv::Mat())
 {
 	cv::Mat result;
 	
-	if (!mask.empty()) cv::matchTemplate(haystack, needle, result, cv::TM_CCOEFF_NORMED, mask);
-	else cv::matchTemplate(haystack, needle, result, cv::TM_CCOEFF_NORMED);
+	goal_string = screenshot_path_string + goal_string + std::string(".png");
 	
-	// Find the location of the best match
-    double minVal, maxVal;
-    cv::Point minLoc, maxLoc;
-    cv::minMaxLoc(result, &minVal, &maxVal, &minLoc, &maxLoc);
-	centre.x = maxLoc.x + needle.cols/2;
-	centre.y = maxLoc.y + needle.rows/2;
+	cv::Mat needle = cv::imread(goal_string);
 	
-	double confidence = result.at<float>(maxLoc.y,maxLoc.x);
-	DEBUG("Confidence is: " << confidence);
+	if(check_mat(needle)) return -1;
 	
-	// Draw a rectangle around the detected region
-    cv::rectangle(haystack, maxLoc, cv::Point(maxLoc.x + needle.cols, maxLoc.y + needle.rows), cv::Scalar(0, 255, 0), 2);
+	DWORD startTime = GetTickCount();
+	DEBUG(timeout);
+	DEBUG(startTime);
+	while (GetTickCount() - startTime < timeout)
+	{
+		//DEBUG(GetTickCount());
+		static DWORD lastTime = 0;
+        if (GetTickCount() - lastTime >= interval) 
+		{
+            lastTime = GetTickCount();
 
-    // Display the result
-    display_image(haystack);
-	Sleep(1000);
+			cv::Mat haystack = capture_screenshot(hwnd);
+			
+			if (!mask.empty()) cv::matchTemplate(haystack, needle, result, cv::TM_CCOEFF_NORMED, mask);
+			else cv::matchTemplate(haystack, needle, result, cv::TM_CCOEFF_NORMED);
+			
+			// Find the location of the best match
+			double minVal, maxVal;
+			cv::Point minLoc, maxLoc;
+			cv::minMaxLoc(result, &minVal, &maxVal, &minLoc, &maxLoc);
+			centre.x = maxLoc.x + needle.cols/2;
+			centre.y = maxLoc.y + needle.rows/2;
+			
+			double confidence_result = result.at<float>(maxLoc.y,maxLoc.x);
+			DEBUG("Confidence is: " << confidence_result);
+			
+			// Draw a rectangle around the detected region
+			//cv::rectangle(haystack, maxLoc, cv::Point(maxLoc.x + needle.cols, maxLoc.y + needle.rows), cv::Scalar(0, 255, 0), 2);
+
+			// Display the result
+			//display_image(haystack);
+			
+			if(confidence_result >= confidence) 
+			{DEBUG("0");return 0;}
+        }
+    }
+	DEBUG(GetTickCount());
+	DEBUG("-1");
+	return -1;
+}
+
+int walk_towards(HWND hwnd,std::string goal_string)
+{
 	
-	if(confidence < 0.98) return -1;
-	return 0;
+	POINT goal_loc;
+	POINT stats_loc;
+	
+	while(1)
+	{
+		if(find(hwnd,goal_string,goal_loc,5000,1000)) 
+		{DEBUG("goal_loc wrong");return -1;}
+		if(find(hwnd,"stats",stats_loc,5000,1000))
+		{DEBUG("stats wrong");return -1;}
+		
+		POINT centre;
+		centre.x = stats_loc.x/2;
+		centre.y = stats_loc.y/2;
+		
+		int d_x = goal_loc.x - centre.x;
+		int d_y = goal_loc.y - centre.y;
+		DEBUG("d_x " << d_x << " d_y " << d_y);
+	}
 }
 
 //========================================================================
@@ -312,16 +358,16 @@ void print_INPUT(INPUT input)
 	DEBUG("input dw:" << input_dwFlags);
 }
 
-void sendEnterKeyPress() 
+void send_key_press(BYTE key,int delay = 50) 
 {
     // Simulate Enter key press
-    keybd_event(VK_RETURN, 0, 0, 0);
+    keybd_event(key, 0, 0, 0);
     
     // Simulate a short delay (optional)
     Sleep(50);
     
     // Simulate Enter key release
-    keybd_event(VK_RETURN, 0, KEYEVENTF_KEYUP, 0);
+    keybd_event(key, 0, KEYEVENTF_KEYUP, 0);
 }
 
 uint8_t send_keystrokes(std::string input_chars)
@@ -387,18 +433,18 @@ uint8_t send_keystrokes(std::string input_chars)
 //========================================================================
 //						SCRIPTS (INTERACTING FUNCTIONS)
 //========================================================================
-int click(cv::Mat launcher, std::string goal_string, POINT& centre, int x, int y)
+int click(HWND hwnd, std::string goal_string, POINT& centre, DWORD timeout, DWORD interval)
 {	
 	DEBUG("clicking on " << goal_string);
 
-	goal_string = screenshot_path_string + goal_string + std::string(".png");
+	RECT rect;
+	GetWindowRect(hwnd, &rect);
 	
-	cv::Mat goal = cv::imread(goal_string);
+	int x_offset = rect.left;
+	int y_offset = rect.top;
 	
-	if(check_mat(goal)) return -1;
-	
-	if(find(launcher,goal,centre)) return -1;
-	SetCursorPos(x+centre.x,y+centre.y);
+	if(find(hwnd,goal_string,centre,timeout,interval)) return -1;
+	SetCursorPos(x_offset+centre.x,y_offset+centre.y);
 	left_mouse_click();
 	
 	return 0;
@@ -408,66 +454,53 @@ int login(HWND hwnd)
 {
 	DEBUG("Logging in");
 	POINT centre;
-
-	RECT rect;
-	GetWindowRect(hwnd, &rect);
 	
-	int x = rect.left;
-	int y = rect.top;
-
-	cv::Mat launcher = capture_screenshot(hwnd);
-	
-	if(click(launcher,"email",centre,x,y)) return -1;
+	if(click(hwnd,"email",centre,10000,1000)) return -1;
 	Sleep(1000);
 	send_keystrokes(email_string);
 	Sleep(1000);
 	
-	if(click(launcher,"password",centre,x,y)) return -1;
+	if(click(hwnd,"password",centre,5000,1000)) return -1;
 	Sleep(1000);
 	send_keystrokes(password_string);
 	Sleep(1000);
-	sendEnterKeyPress();
+	send_key_press(VK_RETURN);
 	
-	Sleep(10000);
-	
-	launcher = capture_screenshot(hwnd);
-	if(click(launcher,"play",centre,x,y)) return -1;
+	if(click(hwnd,"play",centre,5000,1000)) return -1;
 	
 	DEBUG("Logging in finished");
 	
 	return 0;
-}touch click_duration/build.sh
+}
+
+int close_popups(HWND hwnd)
+{
+	DEBUG("Closing popups");
+	POINT centre;
+	
+	click(hwnd,"claim",centre,5000,1000);
+	if(click(hwnd,"closex",centre,5000,1000)) return -1;
+		
+	return 0;
+}
 
 int game(HWND hwnd)
 {
 	DEBUG("Navigating game");
-	POINT centre;
+	
+	//send_key_press(0x58); // presses X 
+					      // https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
+	
+	walk_towards(hwnd,"vault");
+	
+	return 0;
+}
 
-	RECT rect;
-	GetWindowRect(hwnd, &rect);
-	
-	int x = rect.left;
-	int y = rect.top;
-	
-	cv::Mat game = capture_screenshot(hwnd);
-	
-	if(click(game,"claim",centre,x,y))
-	{
-		if(!click(game,"claim",centre,x,y))
-		{
-			if(click(game,"closex",centre,x,y)) return -1;
-			if(!click(game,"claim",centre,x,y)) return -1;
-		}
-		else
-		{
-			if(click(game,"closex",centre,x,y)) return -1;
-		}
-		
-		PRESS Z
-		WALK AND TRACK TOWARDS BAZAAR
-		PRESS CAPSLOCK
-	}
-	
+int wait_for_load(HWND hwnd)
+{
+	DEBUG("Waiting for load");
+	POINT centre;
+	if(find(hwnd,"closex",centre,120000,3000)) return -1;
 	return 0;
 }
 
@@ -478,37 +511,10 @@ CONSIDERATIONS:
 	else if find closex
 		return
 		
-int wait_for_load(HWND hwnd)
-{
-	DEBUG("Waiting for game to load");
-	POINT centre;
-
-	RECT rect;
-	GetWindowRect(hwnd, &rect);
-	
-	int x = rect.left;
-	int y = rect.top;
-	
-	cv::Mat load_screen = capture_screenshot(hwnd);
-	if(click(game,"claim",centre,x,y))
-	{
-		if(!click(game,"claim",centre,x,y))
-		{
-			if(click(game,"closex",centre,x,y)) return -1;
-			if(!click(game,"claim",centre,x,y)) return -1;
-		}
-		else
-		{
-			if(click(game,"closex",centre,x,y)) return -1;
-		}
-		
-		PRESS Z
-		WALK AND TRACK TOWARDS BAZAAR
-		PRESS CAPSLOCK
-	}
-	
-	return 0;
-}*/
+ instead of closign when tagret to walk towards is out of screen, walk around a bit first
+ 
+ add timeouts to all checks instead of sleeping for arbitrary amounts of time
+*/
 
 
 //========================================================================
@@ -521,12 +527,12 @@ int main(void)
 
 	PROCESS_INFORMATION* pi = start_process(launcher_path);
 
-	// Sleep for some time to allow the launcher to start
-	Sleep(10000);
-
 	// Get the process ID of the launched process (game launcher)
 	DWORD launcherProcessId = pi->dwProcessId;
 	DEBUG("Process ID is: " << launcherProcessId);
+	
+	// Sleep for some time to allow the launcher to start
+	Sleep(1000);
 
 	// Attempt to find the window handle
 	HWND hwnd = find_window_by_process_id(launcherProcessId);
@@ -552,7 +558,15 @@ int main(void)
 
 	// Check game is running
 	Sleep(10000);
-	hwnd = find_window_by_process_name(game_name);
+	hwnd = find_window_by_process_name(game_name.c_str());
+	
+	if(wait_for_load(hwnd))
+	{
+		DEBUG("wait for load failed");
+		end_process(pi);
+		PostMessage(hwnd,WM_CLOSE,0,0);
+		return -1;
+	}
 	
 	if(!hwnd)
 	{
@@ -562,17 +576,19 @@ int main(void)
 		return -1;
 	}
 	
-	/*if(wait_for_load(hwnd)) 
+	if(close_popups(hwnd)) 
 	{
-		DEBUG("Loading game failed");
+		DEBUG("Closing popups failed");
 		end_process(pi);
 		PostMessage(hwnd,WM_CLOSE,0,0);
 		return -1;
-	}*/
+	}
+	
+	Sleep(1000);
 	
 	if(game(hwnd)) 
 	{
-		DEBUG("Navigating game failed");
+		DEBUG("Playing game failed");
 		end_process(pi);
 		PostMessage(hwnd,WM_CLOSE,0,0);
 		return -1;
