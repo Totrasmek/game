@@ -1,0 +1,7 @@
+*.exe
+click_duration/
+clicker/
+*.stackdump
+*.txt
+screenshots/
+.vs/
