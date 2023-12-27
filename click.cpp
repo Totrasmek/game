@@ -28,7 +28,8 @@
 
 std::wstring launcher_path = L"D:\\games\\launcher\\launcher.exe";
 std::wstring game_name = L"RotMG Exalt.exe";
-std::string screenshot_path_string = "screenshots\\";
+std::string screenshot_base_path = "screenshots\\";
+std::string screenshot_path = "";
 
 //========================================================================
 //						OPENCV FOR IMAGE MATCHING
@@ -37,7 +38,7 @@ std::string screenshot_path_string = "screenshots\\";
 // Function to capture a screenshot of the window
 cv::Mat capture_screenshot(HWND hwnd) 
 {
-	DEBUG("Capturing screenshot");
+	//DEBUG("Capturing screenshot");
 	
 	RECT rect;
 	GetWindowRect(hwnd, &rect);
@@ -114,7 +115,7 @@ int check_mat(const cv::Mat& image)
 
 int load_img(std::string goal_string,cv::Mat& image)
 {	
-	goal_string = screenshot_path_string + goal_string + std::string(".png");
+	goal_string = screenshot_path + goal_string + std::string(".png");
 	
 	image = cv::imread(goal_string);
 	
@@ -142,7 +143,7 @@ int needle_point(HWND hwnd,std::string goal_string,POINT& centre, double confide
 	centre.y = maxLoc.y + needle.rows/2;
 	
 	double confidence_result = result.at<float>(maxLoc.y,maxLoc.x);
-	DEBUG("Confidence is: " << confidence_result);
+	//DEBUG("Confidence is: " << confidence_result);
 	
 	// Draw a rectangle around the detected region
 	//cv::rectangle(haystack, maxLoc, cv::Point(maxLoc.x + needle.cols, maxLoc.y + needle.rows), cv::Scalar(0, 255, 0), 2);
@@ -461,8 +462,9 @@ int close_popups(HWND hwnd)
 	DEBUG("Closing popups");
 	POINT centre;
 	
-	click(hwnd,"claim",centre,5000,1000);
+	if(!click(hwnd,"claim",centre,5000,1000)) return 1;
 	if(click(hwnd,"closex",centre,5000,1000)) return -1;
+	click(hwnd,"closex2",centre,5000,1000);
 		
 	return 0;
 }
@@ -477,9 +479,11 @@ int wait_for_load(HWND hwnd)
 
 int enter(HWND hwnd,std::string goal_string, POINT centre)
 {
+	DEBUG("entering " << goal_string);
+	
 	POINT goal_loc;
 	
-	int threshold = 50;
+	int threshold = 30;
 	
 	while(1)
 	{
@@ -494,33 +498,35 @@ int enter(HWND hwnd,std::string goal_string, POINT centre)
 		Sleep(1000);
 		
 		int d_x = goal_loc.x - centre.x;
-		DEBUG("\nd_x = goal_loc.x - centre.x\n" << d_x << "=" << goal_loc.x << "-" << centre.x);
+		//DEBUG("\nd_x = goal_loc.x - centre.x\n" << d_x << "=" << goal_loc.x << "-" << centre.x);
 		int d_y = goal_loc.y - centre.y;
-		DEBUG("\nd_y = goal_loc.y - centre.y\n" << d_y << "=" << goal_loc.y << "-" << centre.y);
-		DEBUG("\nd_x " << d_x << "\nd_y " << d_y);
+		//DEBUG("\nd_y = goal_loc.y - centre.y\n" << d_y << "=" << goal_loc.y << "-" << centre.y);
+		//DEBUG("\nd_x " << d_x << "\nd_y " << d_y);
 		
 		// might need a threshold
 		
-		if(d_x > threshold) {DEBUG("D");keybd_event(0x44, 0, 0, 0);}//send_key_press(0x44,1000); // D go right
-		else if(d_x < -1*threshold)  {DEBUG("A");keybd_event(0x41, 0, 0, 0);}//send_key_press(0x41,1000); // A go left
+		if(d_x > threshold) keybd_event(0x44, 0, 0, 0);//send_key_press(0x44,1000); // D go right
+		else if(d_x < -1*threshold) keybd_event(0x41, 0, 0, 0);//send_key_press(0x41,1000); // A go left
 		
-		if(d_y > threshold) {DEBUG("S");keybd_event(0x53, 0, 0, 0);}//send_key_press(0x53,1000); // S go up
-		else if(d_y < -1*threshold)  {DEBUG("W");keybd_event(0x57, 0, 0, 0);}//;send_key_press(0x57,1000); // W go down
+		if(d_y > threshold) keybd_event(0x53, 0, 0, 0);//send_key_press(0x53,1000); // S go up
+		else if(d_y < -1*threshold) keybd_event(0x57, 0, 0, 0);//;send_key_press(0x57,1000); // W go down
 		
 		// detect if change in old d_x d_y is none after movement in which case do a move
 		
-		Sleep(250);
+		Sleep(125);
 		
 		keybd_event(0x44, 0, KEYEVENTF_KEYUP, 0);
 		keybd_event(0x41, 0, KEYEVENTF_KEYUP, 0);
 		keybd_event(0x57, 0, KEYEVENTF_KEYUP, 0);
 		keybd_event(0x53, 0, KEYEVENTF_KEYUP, 0);
+		
+		Sleep(125);
 	}
 	
 	return 0;
 }
 
-int game(HWND hwnd)
+int game(HWND hwnd, int popup_err)
 {
 	DEBUG("Navigating game");
 	
@@ -540,11 +546,14 @@ int game(HWND hwnd)
 	height = height >=0 ? height : -1*height; 
 	centre.y = height/2;
 	
+	if(!popup_err)
+	{
+		if(enter(hwnd,"vault",centre)) return -1;
+		Sleep(5000);
+		if(enter(hwnd,"dailyquestroom",centre)) return -1;
+		Sleep(1000);
+	}
 	
-	if(enter(hwnd,"vault",centre)) return -1;
-	Sleep(5000);
-	if(enter(hwnd,"dailyquestroom",centre)) return -1;
-	Sleep(1000);
 	if(enter(hwnd,"loginseer",centre)) return -1;
 	Sleep(1000);
 	while(!click(hwnd,"reward",centre,2000,1000,0.8)){}
@@ -556,19 +565,17 @@ int whole_process(std::string u, std::string p)
 {
 	DEBUG("Starting...");
 
+	if(GetKeyState(VK_CAPITAL) & 0x0001) send_key_press(VK_CAPITAL);
+
 	PROCESS_INFORMATION* pi = start_process(launcher_path);
 
-	// Get the process ID of the launched process (game launcher)
 	DWORD launcherProcessId = pi->dwProcessId;
 	DEBUG("Process ID is: " << launcherProcessId);
 	
-	// Sleep for some time to allow the launcher to start
 	Sleep(1000);
 
-	// Attempt to find the window handle
 	HWND hwnd = find_window_by_process_id(launcherProcessId);
 
-	// Check if a valid window handle was found
 	if (hwnd == nullptr)
 	{
 		DEBUG("Window handle get failed");
@@ -576,10 +583,10 @@ int whole_process(std::string u, std::string p)
 		return -1;
 	}
 	
-	// Bring window to front
 	bring_to_front(hwnd);
 	
-	// Login and launch exalt
+	screenshot_path = screenshot_base_path;
+	
 	if(login(hwnd,u,p))
 	{
 		DEBUG("Login failed");
@@ -587,9 +594,18 @@ int whole_process(std::string u, std::string p)
 		return -1;
 	}
 
-	// Check game is running
 	Sleep(10000);
 	hwnd = find_window_by_process_name(game_name.c_str());
+	
+	RECT rect;
+	GetWindowRect(hwnd, &rect);
+	
+	int width = rect.right - rect.left;
+	int height = rect.bottom - rect.top;
+	
+	DEBUG("Resolution " << height << "x" << width);
+	screenshot_path += std::to_string(height) + "p\\";
+	DEBUG("path is " << screenshot_path);
 	
 	if(wait_for_load(hwnd))
 	{
@@ -607,7 +623,8 @@ int whole_process(std::string u, std::string p)
 		return -1;
 	}
 	
-	if(close_popups(hwnd)) 
+	int popup_err = close_popups(hwnd);
+	if(popup_err == -1) 
 	{
 		DEBUG("Closing popups failed");
 		end_process(pi);
@@ -617,7 +634,7 @@ int whole_process(std::string u, std::string p)
 	
 	Sleep(1000);
 	
-	if(game(hwnd)) 
+	if(game(hwnd,popup_err)) 
 	{
 		DEBUG("Playing game failed");
 		end_process(pi);
@@ -637,13 +654,14 @@ int whole_process(std::string u, std::string p)
 //========================================================================
 
 int main(void)
-{
+{	
 	std::unordered_map<std::string, std::string> u_p_map = 
 	{
 		
-	}
-    // Iterating over key-value pairs
-    for (const auto& pair : myMap) {
+	};
+    
+    for(const auto& pair : u_p_map)
+	{
         DEBUG(pair.first);
 		if(whole_process(pair.first,pair.second)) return -1;
 		// PUT AN EMAIL FUNCTION HERE INSTEAD OF A RETURN
