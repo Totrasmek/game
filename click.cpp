@@ -28,8 +28,6 @@
 
 std::wstring launcher_path = L"D:\\games\\launcher\\launcher.exe";
 std::wstring game_name = L"RotMG Exalt.exe";
-std::string email_string = "";
-std::string password_string = "";
 std::string screenshot_path_string = "screenshots\\";
 
 //========================================================================
@@ -114,19 +112,51 @@ int check_mat(const cv::Mat& image)
 	return 0;
 }
 
-int find(HWND hwnd, std::string goal_string, POINT& centre, DWORD timeout, DWORD interval, double confidence = 0.95, const cv::Mat& mask = cv::Mat())
-{
-	cv::Mat result;
-	
+int load_img(std::string goal_string,cv::Mat& image)
+{	
 	goal_string = screenshot_path_string + goal_string + std::string(".png");
 	
-	cv::Mat needle = cv::imread(goal_string);
+	image = cv::imread(goal_string);
 	
-	if(check_mat(needle)) return -1;
+	if(check_mat(image)) return -1;
+	return 0;
+}
+
+int needle_point(HWND hwnd,std::string goal_string,POINT& centre, double confidence = 0.95, const cv::Mat& mask = cv::Mat())
+{	
+	cv::Mat haystack = capture_screenshot(hwnd);
 	
+	cv::Mat needle;
+	if(load_img(goal_string,needle)) return -1;
+			
+	cv::Mat result;
+			
+	if (!mask.empty()) cv::matchTemplate(haystack, needle, result, cv::TM_CCOEFF_NORMED, mask);
+	else cv::matchTemplate(haystack, needle, result, cv::TM_CCOEFF_NORMED);
+	
+	// Find the location of the best match
+	double minVal, maxVal;
+	cv::Point minLoc, maxLoc;
+	cv::minMaxLoc(result, &minVal, &maxVal, &minLoc, &maxLoc);
+	centre.x = maxLoc.x + needle.cols/2;
+	centre.y = maxLoc.y + needle.rows/2;
+	
+	double confidence_result = result.at<float>(maxLoc.y,maxLoc.x);
+	DEBUG("Confidence is: " << confidence_result);
+	
+	// Draw a rectangle around the detected region
+	//cv::rectangle(haystack, maxLoc, cv::Point(maxLoc.x + needle.cols, maxLoc.y + needle.rows), cv::Scalar(0, 255, 0), 2);
+
+	// Display the result
+	//display_image(haystack);
+	
+	if(confidence_result >= confidence) return 0;
+	return -1;
+}
+
+int find(HWND hwnd, std::string goal_string, POINT& centre, DWORD timeout, DWORD interval, double confidence = 0.95, const cv::Mat& mask = cv::Mat())
+{	
 	DWORD startTime = GetTickCount();
-	DEBUG(timeout);
-	DEBUG(startTime);
 	while (GetTickCount() - startTime < timeout)
 	{
 		//DEBUG(GetTickCount());
@@ -135,57 +165,10 @@ int find(HWND hwnd, std::string goal_string, POINT& centre, DWORD timeout, DWORD
 		{
             lastTime = GetTickCount();
 
-			cv::Mat haystack = capture_screenshot(hwnd);
-			
-			if (!mask.empty()) cv::matchTemplate(haystack, needle, result, cv::TM_CCOEFF_NORMED, mask);
-			else cv::matchTemplate(haystack, needle, result, cv::TM_CCOEFF_NORMED);
-			
-			// Find the location of the best match
-			double minVal, maxVal;
-			cv::Point minLoc, maxLoc;
-			cv::minMaxLoc(result, &minVal, &maxVal, &minLoc, &maxLoc);
-			centre.x = maxLoc.x + needle.cols/2;
-			centre.y = maxLoc.y + needle.rows/2;
-			
-			double confidence_result = result.at<float>(maxLoc.y,maxLoc.x);
-			DEBUG("Confidence is: " << confidence_result);
-			
-			// Draw a rectangle around the detected region
-			//cv::rectangle(haystack, maxLoc, cv::Point(maxLoc.x + needle.cols, maxLoc.y + needle.rows), cv::Scalar(0, 255, 0), 2);
-
-			// Display the result
-			//display_image(haystack);
-			
-			if(confidence_result >= confidence) 
-			{DEBUG("0");return 0;}
+			if(!needle_point(hwnd,goal_string,centre,confidence,mask)) return 0;
         }
     }
-	DEBUG(GetTickCount());
-	DEBUG("-1");
 	return -1;
-}
-
-int walk_towards(HWND hwnd,std::string goal_string)
-{
-	
-	POINT goal_loc;
-	POINT stats_loc;
-	
-	while(1)
-	{
-		if(find(hwnd,goal_string,goal_loc,5000,1000)) 
-		{DEBUG("goal_loc wrong");return -1;}
-		if(find(hwnd,"stats",stats_loc,5000,1000))
-		{DEBUG("stats wrong");return -1;}
-		
-		POINT centre;
-		centre.x = stats_loc.x/2;
-		centre.y = stats_loc.y/2;
-		
-		int d_x = goal_loc.x - centre.x;
-		int d_y = goal_loc.y - centre.y;
-		DEBUG("d_x " << d_x << " d_y " << d_y);
-	}
 }
 
 //========================================================================
@@ -358,13 +341,13 @@ void print_INPUT(INPUT input)
 	DEBUG("input dw:" << input_dwFlags);
 }
 
-void send_key_press(BYTE key,int delay = 50) 
+void send_key_press(BYTE key,int delay=50) 
 {
     // Simulate Enter key press
     keybd_event(key, 0, 0, 0);
     
     // Simulate a short delay (optional)
-    Sleep(50);
+    Sleep(delay);
     
     // Simulate Enter key release
     keybd_event(key, 0, KEYEVENTF_KEYUP, 0);
@@ -433,7 +416,7 @@ uint8_t send_keystrokes(std::string input_chars)
 //========================================================================
 //						SCRIPTS (INTERACTING FUNCTIONS)
 //========================================================================
-int click(HWND hwnd, std::string goal_string, POINT& centre, DWORD timeout, DWORD interval)
+int click(HWND hwnd, std::string goal_string, POINT& centre, DWORD timeout, DWORD interval,double confidence = 0.95)
 {	
 	DEBUG("clicking on " << goal_string);
 
@@ -443,26 +426,26 @@ int click(HWND hwnd, std::string goal_string, POINT& centre, DWORD timeout, DWOR
 	int x_offset = rect.left;
 	int y_offset = rect.top;
 	
-	if(find(hwnd,goal_string,centre,timeout,interval)) return -1;
+	if(find(hwnd,goal_string,centre,timeout,interval,confidence)) return -1;
 	SetCursorPos(x_offset+centre.x,y_offset+centre.y);
 	left_mouse_click();
 	
 	return 0;
 }
 
-int login(HWND hwnd)
+int login(HWND hwnd,std::string u, std::string p)
 {
 	DEBUG("Logging in");
 	POINT centre;
 	
 	if(click(hwnd,"email",centre,10000,1000)) return -1;
 	Sleep(1000);
-	send_keystrokes(email_string);
+	send_keystrokes(u);
 	Sleep(1000);
 	
 	if(click(hwnd,"password",centre,5000,1000)) return -1;
 	Sleep(1000);
-	send_keystrokes(password_string);
+	send_keystrokes(p);
 	Sleep(1000);
 	send_key_press(VK_RETURN);
 	
@@ -484,18 +467,6 @@ int close_popups(HWND hwnd)
 	return 0;
 }
 
-int game(HWND hwnd)
-{
-	DEBUG("Navigating game");
-	
-	//send_key_press(0x58); // presses X 
-					      // https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
-	
-	walk_towards(hwnd,"vault");
-	
-	return 0;
-}
-
 int wait_for_load(HWND hwnd)
 {
 	DEBUG("Waiting for load");
@@ -504,24 +475,84 @@ int wait_for_load(HWND hwnd)
 	return 0;
 }
 
-/*
-CONSIDERATIONS:
-	if find Load1,2,3 or 4 imagesize
-		wait 5s
-	else if find closex
-		return
+int enter(HWND hwnd,std::string goal_string, POINT centre)
+{
+	POINT goal_loc;
+	
+	int threshold = 50;
+	
+	while(1)
+	{
+		if(!needle_point(hwnd,goal_string+"_entry",goal_loc))
+		{
+			send_key_press(VK_CAPITAL);
+			break;
+		}
 		
- instead of closign when tagret to walk towards is out of screen, walk around a bit first
- 
- add timeouts to all checks instead of sleeping for arbitrary amounts of time
-*/
+		while(needle_point(hwnd,goal_string,goal_loc)) send_key_press(0x45);
+		
+		Sleep(1000);
+		
+		int d_x = goal_loc.x - centre.x;
+		DEBUG("\nd_x = goal_loc.x - centre.x\n" << d_x << "=" << goal_loc.x << "-" << centre.x);
+		int d_y = goal_loc.y - centre.y;
+		DEBUG("\nd_y = goal_loc.y - centre.y\n" << d_y << "=" << goal_loc.y << "-" << centre.y);
+		DEBUG("\nd_x " << d_x << "\nd_y " << d_y);
+		
+		// might need a threshold
+		
+		if(d_x > threshold) {DEBUG("D");keybd_event(0x44, 0, 0, 0);}//send_key_press(0x44,1000); // D go right
+		else if(d_x < -1*threshold)  {DEBUG("A");keybd_event(0x41, 0, 0, 0);}//send_key_press(0x41,1000); // A go left
+		
+		if(d_y > threshold) {DEBUG("S");keybd_event(0x53, 0, 0, 0);}//send_key_press(0x53,1000); // S go up
+		else if(d_y < -1*threshold)  {DEBUG("W");keybd_event(0x57, 0, 0, 0);}//;send_key_press(0x57,1000); // W go down
+		
+		// detect if change in old d_x d_y is none after movement in which case do a move
+		
+		Sleep(250);
+		
+		keybd_event(0x44, 0, KEYEVENTF_KEYUP, 0);
+		keybd_event(0x41, 0, KEYEVENTF_KEYUP, 0);
+		keybd_event(0x57, 0, KEYEVENTF_KEYUP, 0);
+		keybd_event(0x53, 0, KEYEVENTF_KEYUP, 0);
+	}
+	
+	return 0;
+}
 
+int game(HWND hwnd)
+{
+	DEBUG("Navigating game");
+	
+	//send_key_press(0x58); // presses X 
 
-//========================================================================
-//								MAIN
-//========================================================================
+	POINT stats_loc;
+	
+	if(needle_point(hwnd,"stats",stats_loc)) return -1;
+		
+	POINT centre;
+	centre.x = stats_loc.x/2;
+	
+	RECT rect;
+	GetWindowRect(hwnd, &rect);
+	
+	int height = (rect.bottom-rect.top);
+	height = height >=0 ? height : -1*height; 
+	centre.y = height/2;
+	
+	
+	if(enter(hwnd,"vault",centre)) return -1;
+	Sleep(5000);
+	if(enter(hwnd,"dailyquestroom",centre)) return -1;
+	Sleep(1000);
+	if(enter(hwnd,"loginseer",centre)) return -1;
+	Sleep(1000);
+	while(!click(hwnd,"reward",centre,2000,1000,0.8)){}
+	
+	return 0;
+}
 
-int main(void)
+int whole_process(std::string u, std::string p)
 {
 	DEBUG("Starting...");
 
@@ -549,7 +580,7 @@ int main(void)
 	bring_to_front(hwnd);
 	
 	// Login and launch exalt
-	if(login(hwnd)) 
+	if(login(hwnd,u,p))
 	{
 		DEBUG("Login failed");
 		end_process(pi);
@@ -596,8 +627,29 @@ int main(void)
 
 	Sleep(5000);
 	end_process(pi);
+	PostMessage(hwnd,WM_CLOSE,0,0);
 	
 	return 0;
 }
 
-// need an email ryan function
+//========================================================================
+//								MAIN
+//========================================================================
+
+int main(void)
+{
+	std::unordered_map<std::string, std::string> u_p_map = 
+	{
+		
+	}
+    // Iterating over key-value pairs
+    for (const auto& pair : myMap) {
+        DEBUG(pair.first);
+		if(whole_process(pair.first,pair.second)) return -1;
+		// PUT AN EMAIL FUNCTION HERE INSTEAD OF A RETURN
+    }
+
+    return 0;
+	
+	
+}
