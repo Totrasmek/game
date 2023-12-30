@@ -9,6 +9,10 @@
 #include <bitset>
 #include <string>
 
+#include <fstream>
+#include <string>
+#include <unordered_map>
+
 #include <opencv2/opencv.hpp>
 
 // Define DEBUG_PRINT if you want to include debug print statements
@@ -26,10 +30,41 @@
 #define BOTTOM_BYTE(x) ((x) & (0x00ff))
 #define TOP_BYTE(x) ((x) >> (8))
 
-std::wstring launcher_path = L"D:\\games\\launcher\\launcher.exe";
+std::wstring launcher_path = L""; // = L"D:\\games\\launcher\\launcher.exe"
 std::wstring game_name = L"RotMG Exalt.exe";
 std::string screenshot_base_path = "screenshots\\";
 std::string screenshot_path = "";
+
+//========================================================================
+//							CONFIG FILE PARSER
+//========================================================================
+
+std::string trimRight(const std::string& str) {
+    size_t end = str.find_last_not_of(" \t");
+    return (end == std::string::npos) ? "" : str.substr(0, end + 1);
+}
+
+std::string trimLeft(const std::string& str) {
+    size_t start = str.find_first_not_of(" \t");
+    return (start == std::string::npos) ? "" : str.substr(start);
+}
+
+std::unordered_map<std::string, std::string> read_config(const std::string& filename)
+{
+    std::unordered_map<std::string, std::string> config;
+    std::ifstream file(filename);
+    std::string line;
+
+    while (std::getline(file, line)) {
+        auto delimiterPos = line.find('=');
+		if(delimiterPos == std::string::npos) continue;
+        auto key = trimRight(line.substr(0, delimiterPos));
+        auto value = trimLeft(line.substr(delimiterPos + 1));
+        config[key] = value;
+    }
+
+    return config;
+}
 
 //========================================================================
 //						OPENCV FOR IMAGE MATCHING
@@ -462,7 +497,7 @@ int close_popups(HWND hwnd)
 	DEBUG("Closing popups");
 	POINT centre;
 	
-	if(!click(hwnd,"claim",centre,5000,1000)) return 1;
+	if(!click(hwnd,"claim",centre,5000,1000)) {DEBUG("CLAIMCLAIM");return 1;}
 	if(click(hwnd,"closex",centre,5000,1000)) return -1;
 	click(hwnd,"closex2",centre,5000,1000);
 		
@@ -655,9 +690,14 @@ int whole_process(std::string u, std::string p)
 
 int main(void)
 {	
+	std::unordered_map<std::string,std::string> config = read_config("config.ini");
+
+	std::string launcher_path_short = config["launcher_path"];
+	std::cout << launcher_path_short << std::endl;
+	launcher_path = std::wstring(launcher_path_short.begin(),launcher_path_short.end());
+	std::wcout << launcher_path << std::endl;
 	std::unordered_map<std::string, std::string> u_p_map = 
 	{
-		
 	};
     
     for(const auto& pair : u_p_map)
