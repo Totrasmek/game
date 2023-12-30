@@ -1,2 +1,5 @@
 [Paths]
 launcher_path = PLACEHOLDER
+[Credentials]
+email1 = password1
+email2 = password2

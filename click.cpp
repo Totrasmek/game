@@ -49,21 +49,36 @@ std::string trimLeft(const std::string& str) {
     return (start == std::string::npos) ? "" : str.substr(start);
 }
 
-std::unordered_map<std::string, std::string> read_config(const std::string& filename)
+std::pair<std::unordered_map<std::string, std::string>, std::unordered_map<std::string, std::string>> read_config(const std::string& filename)
 {
     std::unordered_map<std::string, std::string> config;
+    std::unordered_map<std::string, std::string> credentials;
     std::ifstream file(filename);
     std::string line;
+    bool readingCredentials = false;
 
     while (std::getline(file, line)) {
+        if (line.empty() || line[0] == '#') continue; // Skip empty lines and comments
+
+        if (line == "[Credentials]") {
+            readingCredentials = true;
+            continue;
+        }
+
         auto delimiterPos = line.find('=');
-		if(delimiterPos == std::string::npos) continue;
+        if (delimiterPos == std::string::npos) continue;
+
         auto key = trimRight(line.substr(0, delimiterPos));
         auto value = trimLeft(line.substr(delimiterPos + 1));
-        config[key] = value;
+
+        if (readingCredentials) {
+            credentials[key] = value;
+        } else {
+            config[key] = value;
+        }
     }
 
-    return config;
+    return {config, credentials};
 }
 
 //========================================================================
@@ -690,17 +705,12 @@ int whole_process(std::string u, std::string p)
 
 int main(void)
 {	
-	std::unordered_map<std::string,std::string> config = read_config("config.ini");
+	auto [config, credentials] = read_config("config.ini");
 
 	std::string launcher_path_short = config["launcher_path"];
-	std::cout << launcher_path_short << std::endl;
 	launcher_path = std::wstring(launcher_path_short.begin(),launcher_path_short.end());
-	std::wcout << launcher_path << std::endl;
-	std::unordered_map<std::string, std::string> u_p_map = 
-	{
-	};
-    
-    for(const auto& pair : u_p_map)
+	
+    for(const auto& pair : credentials)
 	{
         DEBUG(pair.first);
 		if(whole_process(pair.first,pair.second)) return -1;

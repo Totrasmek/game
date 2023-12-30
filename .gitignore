@@ -5,3 +5,4 @@ clicker/
 *.txt
 screenshots/
 .vs/
+config.ini
