@@ -512,7 +512,12 @@ int close_popups(HWND hwnd)
 	DEBUG("Closing popups");
 	POINT centre;
 	
-	if(!click(hwnd,"claim",centre,5000,1000)) {DEBUG("CLAIMCLAIM");return 1;}
+	if(!click(hwnd,"claim",centre,5000,1000)) 
+	{
+		if(click(hwnd,"closex",centre,10000,1000)) return -1;
+		DEBUG("CLAIMCLAIM");
+		return 1;
+	}
 	if(click(hwnd,"closex",centre,5000,1000)) return -1;
 	click(hwnd,"closex2",centre,5000,1000);
 		
@@ -622,7 +627,7 @@ int whole_process(std::string u, std::string p)
 	DWORD launcherProcessId = pi->dwProcessId;
 	DEBUG("Process ID is: " << launcherProcessId);
 	
-	Sleep(1000);
+	Sleep(10000);
 
 	HWND hwnd = find_window_by_process_id(launcherProcessId);
 
