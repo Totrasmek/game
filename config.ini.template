@@ -1,5 +1,6 @@
 [Paths]
 launcher_path = PLACEHOLDER
 [Credentials]
+# lines beginning with hashtags are commented out
 email1 = password1
 email2 = password2

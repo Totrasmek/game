@@ -13,6 +13,9 @@
 #include <string>
 #include <unordered_map>
 
+#include "CkMailMan.h"
+#include "CkEmail.h"
+
 #include <opencv2/opencv.hpp>
 
 // Define DEBUG_PRINT if you want to include debug print statements
@@ -34,7 +37,38 @@ std::wstring launcher_path = L""; // = L"D:\\games\\launcher\\launcher.exe"
 std::wstring game_name = L"RotMG Exalt.exe";
 std::string screenshot_base_path = "screenshots\\";
 std::string screenshot_path = "";
+std::string gmail_password = "";
+std::string gmail_sender = "";
+std::string gmail_receiver = "";
 
+//========================================================================
+//							EMAILS
+//========================================================================
+
+void send_email(const char* subject, const char* body)
+{
+    CkMailMan mailman;
+
+    // Gmail SMTP server settings
+    mailman.put_SmtpHost("smtp.gmail.com");
+    mailman.put_SmtpUsername(gmail_sender.c_str());
+    mailman.put_SmtpPassword(gmail_password.c_str()); // Use App Password here
+    mailman.put_StartTLS(true); // Use STARTTLS
+	mailman.put_SmtpPort(587);
+
+    CkEmail email;
+
+    email.put_Subject(subject);
+    email.put_Body(body);
+    email.put_From(gmail_sender.c_str());
+    email.AddTo("",gmail_receiver.c_str());
+
+    // Send the email
+    bool success = mailman.SendEmail(email);
+    if (success != true) {
+        std::cout << "Error sending email: " << mailman.lastErrorText() << std::endl;
+    }
+}
 //========================================================================
 //							CONFIG FILE PARSER
 //========================================================================
@@ -611,9 +645,10 @@ int game(HWND hwnd, int popup_err)
 	
 	if(enter(hwnd,"loginseer",centre)) return -1;
 	Sleep(1000);
-	while(!click(hwnd,"reward",centre,2000,1000,0.8)){}
+	int rewards = 0;
+	while(!click(hwnd,"reward",centre,2000,1000,0.8)){++rewards;}
 	
-	return 0;
+	return rewards;
 }
 
 int whole_process(std::string u, std::string p)
@@ -689,7 +724,9 @@ int whole_process(std::string u, std::string p)
 	
 	Sleep(1000);
 	
-	if(game(hwnd,popup_err)) 
+	int rewards = game(hwnd,popup_err);
+	
+	if(rewards == -1) 
 	{
 		DEBUG("Playing game failed");
 		end_process(pi);
@@ -701,7 +738,7 @@ int whole_process(std::string u, std::string p)
 	end_process(pi);
 	PostMessage(hwnd,WM_CLOSE,0,0);
 	
-	return 0;
+	return rewards;
 }
 
 //========================================================================
@@ -715,12 +752,23 @@ int main(void)
 	std::string launcher_path_short = config["launcher_path"];
 	launcher_path = std::wstring(launcher_path_short.begin(),launcher_path_short.end());
 	
+	std::string log = "Account statuses:";
+	
     for(const auto& pair : credentials)
 	{
         DEBUG(pair.first);
-		if(whole_process(pair.first,pair.second)) return -1;
-		// PUT AN EMAIL FUNCTION HERE INSTEAD OF A RETURN
+		int rewards = whole_process(pair.first,pair.second);
+		if(rewards==-1) 
+		{
+			log += ("\n" + pair.first + ": failed");
+		}
+		else
+		{
+			log += ("\n" + pair.first + ": rewards " + std::to_string(rewards));
+		}
     }
+
+	send_email("logins",log.c_str());
 
     return 0;
 	
