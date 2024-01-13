@@ -557,7 +557,7 @@ int close_popups(HWND hwnd)
 		DEBUG("CLAIMCLAIM");
 		return 1;
 	}
-	if(click(hwnd,"closex",centre,5000,1000)) return -1;
+	if(click(hwnd,"closex",centre,20000,1000)) return -1;
 	click(hwnd,"closex2",centre,5000,1000);
 		
 	return 0;
