@@ -534,7 +534,12 @@ int login(HWND hwnd,std::string u, std::string p)
 	Sleep(1000);
 	send_key_press(VK_RETURN);
 	
-	if(click(hwnd,"play",centre,5000,1000)) return -1;
+	if(click(hwnd,"update",centre,5000,1000))
+	{
+		Sleep(60000);
+		if(click(hwnd,"play",centre,60000*5,5000)) return -1;
+	}
+	else if(click(hwnd,"play",centre,5000,1000)) return -1;
 	
 	DEBUG("Logging in finished");
 	
